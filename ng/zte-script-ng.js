@@ -249,83 +249,64 @@
     return parts.join("");
   }
 
-const LTEITALY_MAP_BASE = "https://lteitaly.it/internal/map.php#bts=";
-  // Se preferisci la mappa pubblica, prova:
-  // const LTEITALY_MAP_BASE = "https://lteitaly.it/public/map.php#bts=";
+  function getLteItalyPlmn(netInfo) {
+    let plmn = "";
 
-  function parseRouterCellId(value) {
-    if (value == null || value === "") return NaN;
-    if (typeof value === "number") return value;
-
-    const s = String(value).trim();
-
-    // Decimale normale, come di solito arriva da ZTE
-    if (/^[0-9]+$/.test(s)) return Number(s);
-
-    // Esadecimale con prefisso 0x
-    if (/^0x[0-9a-f]+$/i.test(s)) return parseInt(s, 16);
-
-    // Esadecimale senza prefisso
-    if (/^[0-9a-f]+$/i.test(s)) return parseInt(s, 16);
-
-    return Number(s);
-  }
-
-  function findItalianPlmn(netInfo) {
-    const re = /(^|[^0-9])((?:222\d{2})|2221)(?!\d)/;
-
-    const preferredKeys = [
-      "plmn",
-      "lte_plmn",
-      "nr5g_plmn",
-      "mcc_mnc",
-      "mccmnc",
-      "network_provider",
-      "network_provider_id",
-      "network_operator",
-      "network_operator_code",
-      "operator",
-      "operator_code",
-      "INTF_Network_In_Use",
-      "intf_network_in_use"
+    // Prova a leggere il PLMN da vari campi possibili del router
+    const candidates = [
+      netInfo?.plmn,
+      netInfo?.lte_plmn,
+      netInfo?.network_plmn,
+      netInfo?.operator_plmn,
+      netInfo?.mccmnc,
+      netInfo?.mcc_mnc,
+      netInfo?.network_provider,
+      netInfo?.network_provider_id,
+      netInfo?.network_operator,
+      netInfo?.network_operator_code,
+      netInfo?.INTF_Network_In_Use,
+      netInfo?.intf_network_in_use
     ];
 
-    for (const k of preferredKeys) {
-      const m = String(netInfo?.[k] ?? "").match(re);
-      if (m) return m[2];
+    for (const c of candidates) {
+      const s = String(c || "");
+      const m = s.match(/222\d{2}|2221/);
+      if (m) {
+        plmn = m[0];
+        break;
+      }
     }
 
-    // Fallback: cerca solo nei campi che sembrano contenere operatore / rete
-    for (const [k, v] of Object.entries(netInfo || {})) {
-      if (!/(plmn|mcc|mnc|operator|provider|network.*use|intf)/i.test(k)) continue;
-      const m = String(v ?? "").match(re);
-      if (m) return m[2];
+    // Fallback dal nome operatore
+    if (!plmn) {
+      const name = String(netInfo?.network_provider_fullname || "").toLowerCase();
+
+      if (name.includes("tim")) {
+        plmn = "22201";
+      } else if (name.includes("vodafone")) {
+        plmn = "22210";
+      } else if (name.includes("wind") || name.includes("w3")) {
+        plmn = "22288";
+      } else if (name.includes("iliad")) {
+        plmn = "22250";
+      }
     }
 
-    // Ultimo fallback dal nome operatore
-    const name = String(
-      netInfo?.network_provider_fullname ||
-      netInfo?.network_provider ||
-      ""
-    ).toLowerCase();
-
-    if (/\btim\b|telecom/.test(name)) return "22201";
-    if (/vodafone/.test(name)) return "22210";
-    if (/wind\s*tre|windtre|wind|w3/.test(name)) return "22288";
-    if (/iliad/.test(name)) return "22250";
-
-    return "";
+    return plmn;
   }
 
   function normalizeLteItalyPlmn(plmn, enbid) {
     plmn = String(plmn || "").trim();
 
     // Compatibilità con LTE Italy / script miononno
-    if (plmn === "22201") plmn = "2221";   // TIM
-    if (plmn === "22299") plmn = "22288";  // WindTre
+    if (plmn === "22201") {
+      plmn = "2221";
+    }
 
-    // Caso iliad su rete WindTre / ran sharing:
-    // lo mantengo uguale al codice che hai dato tu.
+    if (plmn === "22299") {
+      plmn = "22288";
+    }
+
     if (plmn === "22250" && String(enbid).length === 6) {
       plmn = "22288";
     }
@@ -333,34 +314,23 @@ const LTEITALY_MAP_BASE = "https://lteitaly.it/internal/map.php#bts=";
     return plmn;
   }
 
-  function buildLteItalyBtsInfo(netInfo) {
-    const cellId = parseRouterCellId(netInfo?.cell_id);
-
-    if (!Number.isFinite(cellId) || cellId <= 0) {
-      return null;
-    }
-
-    // eNodeB LTE decimale
-    const enbid = Math.trunc(cellId / 256);
-
+  function buildLteItalyLink(netInfo, enbid) {
     if (!enbid) {
       return null;
     }
 
-    const rawPlmn = findItalianPlmn(netInfo);
-    const plmn = normalizeLteItalyPlmn(rawPlmn, enbid);
+    let plmn = getLteItalyPlmn(netInfo);
+    plmn = normalizeLteItalyPlmn(plmn, enbid);
 
     if (!plmn) {
       return null;
     }
 
-    const code = `${plmn}.${enbid}`;
+    const btsCode = `${plmn}.${enbid}`;
 
     return {
-      plmn,
-      enbid,
-      code,
-      url: LTEITALY_MAP_BASE + encodeURIComponent(code)
+      code: btsCode,
+      url: `https://lteitaly.it/internal/map.php#bts=${btsCode}`
     };
   }
 
@@ -1357,36 +1327,37 @@ const LTEITALY_MAP_BASE = "https://lteitaly.it/internal/map.php#bts=";
       }
 
       let cellIdDisplay = "-";
+      let lteItalyInfo = null;
 
       let nodeId = null;
       let sectorId = null;
 
       if (is4gBasedNetworkType(netInfo.network_type) && netInfo.cell_id) {
         const { eNodeB, sector } = LteSignal.calculateEnodeBAndSectorId(netInfo.cell_id);
+
         nodeId = eNodeB;
         sectorId = sector;
+
+        lteItalyInfo = buildLteItalyLink(netInfo, eNodeB);
       } else if (netInfo.nr5g_cell_id) {
         const { gNodeB, sector } = NrSignal.calculateGnodeBAndSectorId(netInfo.nr5g_cell_id);
+
         nodeId = gNodeB;
         sectorId = sector;
       }
 
       if (nodeId != null && sectorId != null) {
-        cellIdDisplay = `${toHex(nodeId, false)}<span class="cellid-sep">|</span>${toHex(sectorId, false)}`;
+        const nodeHex = toHex(nodeId, false);
+        const sectorHex = toHex(sectorId, false);
+
+        if (lteItalyInfo) {
+          cellIdDisplay =
+            `<a href="${lteItalyInfo.url}" target="_blank" rel="noopener noreferrer" title="Apri BTS ${lteItalyInfo.code} su LTE Italy">${nodeHex}<span class="cellid-sep">|</span>${sectorHex}</a>`;
+        } else {
+          cellIdDisplay =
+            `${nodeHex}<span class="cellid-sep">|</span>${sectorHex}`;
+        }
       }
-
-      const lteItalyBts = buildLteItalyBtsInfo(netInfo);
-
-      const lteItalyRow = lteItalyBts
-        ? `<tr>
-             <th>BTS LTE Italy</th>
-             <td>
-               <a href="${lteItalyBts.url}" target="_blank" rel="noopener noreferrer">
-                 ${lteItalyBts.code}
-               </a>
-             </td>
-           </tr>`
-        : `<tr><th>BTS LTE Italy</th><td>-</td></tr>`;
 
       table.innerHTML = `
         <tr><th>Provider</th><td>${netInfo.network_provider_fullname || "-"}</td></tr>
@@ -1395,7 +1366,6 @@ const LTEITALY_MAP_BASE = "https://lteitaly.it/internal/map.php#bts=";
         <tr><th>Bands</th><td>${bandSummary}</td></tr>
         <tr><th>BW</th><td>${totalBandwidth > 0 ? totalBandwidth + " MHz" : "-"}</td></tr>
         <tr><th>Cell ID</th><td>${cellIdDisplay}</td></tr>
-        ${lteItalyRow}
       `;
     }
 
