@@ -253,27 +253,64 @@
   function getLteItalyUrl(netInfo, nodeId) {
     if (!nodeId || !netInfo) return null;
   
-    // Estrai il PLMN provando i campi più comuni del netInfo ZTE
     let plmn = "";
   
-    if (netInfo.mcc && netInfo.mnc) {
-      // MNC va paddato a 2 cifre (es. "1" -> "01")
-      const mnc = String(netInfo.mnc).padStart(2, "0");
-      plmn = String(netInfo.mcc) + mnc;
-    } else if (netInfo.plmn) {
-      plmn = String(netInfo.plmn).replace(/\D/g, "");
-    } else if (netInfo.network_provider && /^\d{5,6}$/.test(String(netInfo.network_provider))) {
-      plmn = String(netInfo.network_provider);
-    } else if (netInfo.cur_plmn) {
-      plmn = String(netInfo.cur_plmn).replace(/\D/g, "");
+    // 1) Campi PLMN diretti (vari nomi possibili sui firmware ZTE)
+    const plmnFields = [
+      "plmn", "cur_plmn", "plmn_id", "lte_plmn", "nr5g_plmn",
+      "registered_plmn", "rplmn", "ppp_status_plmn"
+    ];
+    for (const f of plmnFields) {
+      if (netInfo[f]) {
+        const v = String(netInfo[f]).replace(/\D/g, "");
+        if (v.length === 5 || v.length === 6) { plmn = v; break; }
+      }
+    }
+  
+    // 2) MCC + MNC separati
+    if (!plmn && netInfo.mcc && netInfo.mnc) {
+      plmn = String(netInfo.mcc) + String(netInfo.mnc).padStart(2, "0");
+    }
+  
+    // 3) Estrai da network_provider o INTF_Network_In_Use ecc.
+    if (!plmn) {
+      const candidates = [
+        netInfo.network_provider,
+        netInfo.INTF_Network_In_Use,
+        netInfo.network_provider_short
+      ];
+      for (const c of candidates) {
+        if (!c) continue;
+        const parts = String(c).split(/[_\-\s]/);
+        for (const p of parts) {
+          if (/^\d{5,6}$/.test(p)) { plmn = p; break; }
+        }
+        if (plmn) break;
+      }
+    }
+  
+    // 4) Fallback: nome operatore → PLMN
+    if (!plmn) {
+      const name = String(
+        netInfo.network_provider_fullname ||
+        netInfo.network_provider ||
+        ""
+      ).toLowerCase();
+      if (name.includes("vodafone"))      plmn = "22210";
+      else if (name.includes("iliad"))    plmn = "22250";
+      else if (name.includes("tim") || name.includes("i tim") || name.includes("italia")) plmn = "22201";
+      else if (name.includes("wind") || name.includes("3 ita") || name.includes("h3g")) plmn = "22299";
+      else if (name.includes("fastweb"))  plmn = "22208";
+      else if (name.includes("poste"))    plmn = "22277";
+      else if (name.includes("coopvoce")) plmn = "22201"; // virtuale TIM
     }
   
     if (!plmn) return null;
   
-    // Correzioni operatori italiani (identiche a miononno)
-    if (plmn === "22201") plmn = "2221";                                 // TIM
-    if (plmn === "22299") plmn = "22288";                                // Wind Tre
-    if (plmn === "22250" && String(nodeId).length === 6) plmn = "22288"; // Iliad su infra WindTre
+    // Mappature speciali usate da lteitaly.it (logica miononno)
+    if (plmn === "22201") plmn = "2221";                                  // TIM → 2221
+    if (plmn === "22299") plmn = "22288";                                 // Wind/3 → 22288
+    if (plmn === "22250" && String(nodeId).length === 6) plmn = "22288";  // Iliad su infra W3
   
     return `https://lteitaly.it/internal/map.php#bts=${plmn}.${nodeId}`;
   }
