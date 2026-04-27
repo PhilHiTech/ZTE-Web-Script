@@ -2301,3 +2301,193 @@
     showBanner();
   })();
 })();
+
+// ============================================================
+// MODULO: LteItaly Cell ID Linker
+// Da incollare in fondo allo script ZTE-Script-NG
+// (dopo "ZTE-Script-NG v2025-10-17 loaded.")
+// ============================================================
+(function(global) {
+  'use strict';
+  
+  const MODULE_NAME = 'LteItalyLinker';
+  const VERSION = '1.0';
+  const LTEITALY_BASE = 'https://lteitaly.it/internal/map.php#bts=';
+  
+  const OPERATORS = [
+    { name: 'TIM',   plmn: '2221',  color: '#0033A0', match: /\bTIM\b|22201/i },
+    { name: 'Voda',  plmn: '22210', color: '#E60000', match: /Vodafone|22210/i },
+    { name: 'W3',    plmn: '22288', color: '#F39200', match: /Wind\s*Tre|WindTre|22288|22299/i },
+    { name: 'Iliad', plmn: '22250', color: '#B40000', match: /Iliad|22250/i }
+  ];
+  
+  const CSS = `
+    .lteit-enb { color:#06C; font-weight:bold; text-decoration:underline; cursor:pointer; }
+    .lteit-enb:hover { color:#03A; }
+    .lteit-cell { font-weight:bold; color:#444; }
+    .lteit-badges { display:inline-block; margin-left:6px; vertical-align:middle; }
+    .lteit-badge {
+      display:inline-block; margin-right:3px; padding:1px 5px;
+      border-radius:3px; color:#fff; font-size:10px; font-weight:bold;
+      text-decoration:none; font-family:sans-serif; line-height:1.4;
+    }
+    .lteit-badge:hover { opacity:0.85; }
+    .lteit-info {
+      font-size:10px; color:#888; margin-top:2px;
+      font-family:monospace; line-height:1.2;
+    }
+  `;
+  
+  const Module = {
+    name: MODULE_NAME,
+    version: VERSION,
+    _observer: null,
+    _styleInjected: false,
+    
+    log(msg, ...args) {
+      console.log(`[${MODULE_NAME}] ${msg}`, ...args);
+    },
+    
+    injectCSS() {
+      if (this._styleInjected) return;
+      const style = document.createElement('style');
+      style.id = 'lteit-styles';
+      style.textContent = CSS;
+      document.head.appendChild(style);
+      this._styleInjected = true;
+    },
+    
+    detectOperator() {
+      const text = (document.body.innerText || '').slice(0, 5000);
+      for (const op of OPERATORS) {
+        if (op.match.test(text)) return op;
+      }
+      return null;
+    },
+    
+    parseCellId(text) {
+      const m = text.trim().match(/^([0-9A-Fa-f]{3,8})\s*\|\s*([0-9A-Fa-f]{1,4})$/);
+      if (!m) return null;
+      return {
+        enbHex: m[1].toUpperCase(),
+        cellHex: m[2].toUpperCase(),
+        enbDec: parseInt(m[1], 16),
+        cellDec: parseInt(m[2], 16)
+      };
+    },
+    
+    transformCell(td) {
+      if (td.dataset.lteitDone === '1') return false;
+      
+      const parsed = this.parseCellId(td.textContent);
+      if (!parsed) return false;
+      
+      const detected = this.detectOperator();
+      const primary = detected || OPERATORS[0];
+      
+      td.innerHTML = '';
+      td.dataset.lteitDone = '1';
+      
+      // Link principale eNB
+      const enbLink = document.createElement('a');
+      enbLink.className = 'lteit-enb';
+      enbLink.href = LTEITALY_BASE + primary.plmn + '.' + parsed.enbDec;
+      enbLink.target = '_blank';
+      enbLink.rel = 'noopener';
+      enbLink.textContent = parsed.enbHex;
+      enbLink.title = `eNB ${parsed.enbDec} (0x${parsed.enbHex}) → lteitaly.it [${primary.name}${detected ? ' rilevato' : ' default'}]`;
+      td.appendChild(enbLink);
+      
+      // Separatore (mantengo classe originale ZTE)
+      const sep = document.createElement('span');
+      sep.className = 'cellid-sep';
+      sep.textContent = '|';
+      td.appendChild(sep);
+      
+      // Cell/Sector ID
+      const cell = document.createElement('span');
+      cell.className = 'lteit-cell';
+      cell.textContent = parsed.cellHex;
+      cell.title = `Cell/Sector: 0x${parsed.cellHex} = ${parsed.cellDec}`;
+      td.appendChild(cell);
+      
+      // Badges operatori
+      td.appendChild(document.createTextNode(' '));
+      const badges = document.createElement('span');
+      badges.className = 'lteit-badges';
+      OPERATORS.forEach(op => {
+        const b = document.createElement('a');
+        b.className = 'lteit-badge';
+        b.href = LTEITALY_BASE + op.plmn + '.' + parsed.enbDec;
+        b.target = '_blank';
+        b.rel = 'noopener';
+        b.textContent = op.name;
+        b.style.background = op.color;
+        b.title = `Apri eNB ${parsed.enbDec} su lteitaly.it (${op.name})`;
+        badges.appendChild(b);
+      });
+      td.appendChild(badges);
+      
+      // Info decimali
+      const info = document.createElement('div');
+      info.className = 'lteit-info';
+      info.textContent = `eNB=${parsed.enbDec} · Cell=${parsed.cellDec}` +
+                        (detected ? ` · ${detected.name}` : '');
+      td.appendChild(info);
+      
+      return true;
+    },
+    
+    scan() {
+      let count = 0;
+      const rows = document.querySelectorAll('tr');
+      rows.forEach(tr => {
+        const th = tr.querySelector('th, td:first-child');
+        if (!th || !/^cell\s*id$/i.test(th.textContent.trim())) return;
+        const td = tr.querySelector('td:last-child');
+        if (td && td !== th && this.transformCell(td)) count++;
+      });
+      return count;
+    },
+    
+    startObserver() {
+      if (this._observer) this._observer.disconnect();
+      this._observer = new MutationObserver(muts => {
+        let need = false;
+        for (const m of muts) {
+          if (m.type === 'childList' && m.addedNodes.length) { need = true; break; }
+          if (m.type === 'characterData') { need = true; break; }
+        }
+        if (need) this.scan();
+      });
+      this._observer.observe(document.body, {
+        childList: true, subtree: true, characterData: true
+      });
+    },
+    
+    stop() {
+      this._observer?.disconnect();
+      this._observer = null;
+    },
+    
+    init() {
+      this.injectCSS();
+      const n = this.scan();
+      this.startObserver();
+      this.log(`v${VERSION} init OK (${n} celle trasformate, observer attivo)`);
+    }
+  };
+  
+  // Espone il modulo globalmente
+  global.LteItalyLinker = Module;
+  
+  // Auto-init: se la pagina è già pronta parte subito,
+  // altrimenti aspetta DOMContentLoaded.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => Module.init());
+  } else {
+    // Piccolo delay per dare tempo a ZTE-Script-NG di renderizzare
+    setTimeout(() => Module.init(), 300);
+  }
+})(window);
+// ============================================================
