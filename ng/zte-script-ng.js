@@ -249,6 +249,35 @@
     return parts.join("");
   }
 
+  // --- lteitaly.it BTS URL builder ---
+  function getLteItalyUrl(netInfo, nodeId) {
+    if (!nodeId || !netInfo) return null;
+  
+    // Estrai il PLMN provando i campi più comuni del netInfo ZTE
+    let plmn = "";
+  
+    if (netInfo.mcc && netInfo.mnc) {
+      // MNC va paddato a 2 cifre (es. "1" -> "01")
+      const mnc = String(netInfo.mnc).padStart(2, "0");
+      plmn = String(netInfo.mcc) + mnc;
+    } else if (netInfo.plmn) {
+      plmn = String(netInfo.plmn).replace(/\D/g, "");
+    } else if (netInfo.network_provider && /^\d{5,6}$/.test(String(netInfo.network_provider))) {
+      plmn = String(netInfo.network_provider);
+    } else if (netInfo.cur_plmn) {
+      plmn = String(netInfo.cur_plmn).replace(/\D/g, "");
+    }
+  
+    if (!plmn) return null;
+  
+    // Correzioni operatori italiani (identiche a miononno)
+    if (plmn === "22201") plmn = "2221";                                 // TIM
+    if (plmn === "22299") plmn = "22288";                                // Wind Tre
+    if (plmn === "22250" && String(nodeId).length === 6) plmn = "22288"; // Iliad su infra WindTre
+  
+    return `https://lteitaly.it/internal/map.php#bts=${plmn}.${nodeId}`;
+  }
+
   function setCurrent4gMask(maskNum) {
     const panel = document.getElementById("router-info-panel");
     if (panel) {
@@ -1257,7 +1286,11 @@
       }
 
       if (nodeId != null && sectorId != null) {
-        cellIdDisplay = `${toHex(nodeId, false)}<span class="cellid-sep">|</span>${toHex(sectorId, false)}`;
+        const cellText = `${toHex(nodeId, false)}<span class="cellid-sep">|</span>${toHex(sectorId, false)}`;
+        const url = getLteItalyUrl(netInfo, nodeId);
+        cellIdDisplay = url
+          ? `<a href="${url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;border-bottom:1px dotted #888;" title="Apri BTS su lteitaly.it">${cellText}</a>`
+          : cellText;
       }
 
       table.innerHTML = `
@@ -1267,6 +1300,7 @@
         <tr><th>Bands</th><td>${bandSummary}</td></tr>
         <tr><th>BW</th><td>${totalBandwidth > 0 ? totalBandwidth + " MHz" : "-"}</td></tr>
         <tr><th>Cell ID</th><td>${cellIdDisplay}</td></tr>
+        <tr><th>BTS</th><td>${nodeId != null ? nodeId : "-"}</td></tr>
       `;
     }
 
