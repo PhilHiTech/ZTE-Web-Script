@@ -249,91 +249,6 @@
     return parts.join("");
   }
 
-  function getLteItalyPlmn(netInfo) {
-    let plmn = "";
-
-    // Prova a leggere il PLMN da vari campi possibili del router
-    const candidates = [
-      netInfo?.plmn,
-      netInfo?.lte_plmn,
-      netInfo?.network_plmn,
-      netInfo?.operator_plmn,
-      netInfo?.mccmnc,
-      netInfo?.mcc_mnc,
-      netInfo?.network_provider,
-      netInfo?.network_provider_id,
-      netInfo?.network_operator,
-      netInfo?.network_operator_code,
-      netInfo?.INTF_Network_In_Use,
-      netInfo?.intf_network_in_use
-    ];
-
-    for (const c of candidates) {
-      const s = String(c || "");
-      const m = s.match(/222\d{2}|2221/);
-      if (m) {
-        plmn = m[0];
-        break;
-      }
-    }
-
-    // Fallback dal nome operatore
-    if (!plmn) {
-      const name = String(netInfo?.network_provider_fullname || "").toLowerCase();
-
-      if (name.includes("tim")) {
-        plmn = "22201";
-      } else if (name.includes("vodafone")) {
-        plmn = "22210";
-      } else if (name.includes("wind") || name.includes("w3")) {
-        plmn = "22288";
-      } else if (name.includes("iliad")) {
-        plmn = "22250";
-      }
-    }
-
-    return plmn;
-  }
-
-  function normalizeLteItalyPlmn(plmn, enbid) {
-    plmn = String(plmn || "").trim();
-
-    // Compatibilità con LTE Italy / script miononno
-    if (plmn === "22201") {
-      plmn = "2221";
-    }
-
-    if (plmn === "22299") {
-      plmn = "22288";
-    }
-
-    if (plmn === "22250" && String(enbid).length === 6) {
-      plmn = "22288";
-    }
-
-    return plmn;
-  }
-
-  function buildLteItalyLink(netInfo, enbid) {
-    if (!enbid) {
-      return null;
-    }
-
-    let plmn = getLteItalyPlmn(netInfo);
-    plmn = normalizeLteItalyPlmn(plmn, enbid);
-
-    if (!plmn) {
-      return null;
-    }
-
-    const btsCode = `${plmn}.${enbid}`;
-
-    return {
-      code: btsCode,
-      url: `https://lteitaly.it/internal/map.php#bts=${btsCode}`
-    };
-  }
-
   function setCurrent4gMask(maskNum) {
     const panel = document.getElementById("router-info-panel");
     if (panel) {
@@ -1327,36 +1242,22 @@
       }
 
       let cellIdDisplay = "-";
-      let lteItalyInfo = null;
 
       let nodeId = null;
       let sectorId = null;
 
       if (is4gBasedNetworkType(netInfo.network_type) && netInfo.cell_id) {
         const { eNodeB, sector } = LteSignal.calculateEnodeBAndSectorId(netInfo.cell_id);
-
         nodeId = eNodeB;
         sectorId = sector;
-
-        lteItalyInfo = buildLteItalyLink(netInfo, eNodeB);
       } else if (netInfo.nr5g_cell_id) {
         const { gNodeB, sector } = NrSignal.calculateGnodeBAndSectorId(netInfo.nr5g_cell_id);
-
         nodeId = gNodeB;
         sectorId = sector;
       }
 
       if (nodeId != null && sectorId != null) {
-        const nodeHex = toHex(nodeId, false);
-        const sectorHex = toHex(sectorId, false);
-
-        if (lteItalyInfo) {
-          cellIdDisplay =
-            `<a href="${lteItalyInfo.url}" target="_blank" rel="noopener noreferrer" title="Apri BTS ${lteItalyInfo.code} su LTE Italy">${nodeHex}<span class="cellid-sep">|</span>${sectorHex}</a>`;
-        } else {
-          cellIdDisplay =
-            `${nodeHex}<span class="cellid-sep">|</span>${sectorHex}`;
-        }
+        cellIdDisplay = `${toHex(nodeId, false)}<span class="cellid-sep">|</span>${toHex(sectorId, false)}`;
       }
 
       table.innerHTML = `
