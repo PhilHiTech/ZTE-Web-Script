@@ -2308,27 +2308,23 @@
 // (dopo "ZTE-Script-NG v2025-10-17 loaded.")
 // ============================================================
 (function installLteItalyLinker() {
-  'use strict';
+  const BASE = 'https://lteitaly.it/internal/map.php#bts=';
   
-  const BASE = 'https://lteitaly.it/it/map.php';
-  
-  // Operatori italiani (parametro op= in lowercase)
+  // Operatori italiani con PLMN (formato lteitaly.it)
   const OPERATORS = [
-    { name: 'TIM',     op: 'tim',      color: '#0033A0', match: /\bTIM\b|22201/i },
-    { name: 'Voda',    op: 'vodafone', color: '#E60000', match: /Vodafone|22210/i },
-    { name: 'WindTre', op: 'windtre',  color: '#F39200', match: /Wind\s*Tre|WindTre|Wind\s*3|22288|22299|22243/i },
-    { name: 'Iliad',   op: 'iliad',    color: '#B40000', match: /Iliad|22250/i }
+    { name: 'TIM',   plmn: '2221',  color: '#0033A0' },
+    { name: 'Voda',  plmn: '22210', color: '#E60000' },
+    { name: 'W3',    plmn: '22288', color: '#F39200' },
+    { name: 'Iliad', plmn: '22250', color: '#B40000' }
   ];
   
-  function buildUrl(op, enbDec) {
-    return `${BASE}?enodeb=${enbDec}&op=${op}`;
-  }
-  
   function detectOperator() {
-    const text = (document.body.innerText || '').slice(0, 8000);
-    for (const op of OPERATORS) {
-      if (op.match.test(text)) return op;
-    }
+    // Cerca pattern operatore nel DOM
+    const text = document.body.innerText;
+    if (/\bTIM\b|22201/.test(text))       return OPERATORS[0];
+    if (/Vodafone|22210/i.test(text))      return OPERATORS[1];
+    if (/Wind\s*Tre|WindTre|22288|22299/i.test(text)) return OPERATORS[2];
+    if (/Iliad|22250/i.test(text))         return OPERATORS[3];
     return null;
   }
   
@@ -2354,12 +2350,12 @@
     
     // Link principale sull'eNB hex
     const enbLink = document.createElement('a');
-    enbLink.href = buildUrl(primary.op, enbDec);
+    enbLink.href = BASE + primary.plmn + '.' + enbDec;
     enbLink.target = '_blank';
     enbLink.rel = 'noopener';
     enbLink.textContent = enbHex;
-    enbLink.title = `eNB ${enbDec} (0x${enbHex}) → lteitaly.it [${primary.name}${detected ? ' ✓ rilevato' : ' default'}]`;
-    enbLink.style.cssText = 'color:#0066CC;font-weight:bold;text-decoration:underline;cursor:pointer;';
+    enbLink.title = `eNB ${enbDec} (${enbHex} hex) → cerca su lteitaly.it [${primary.name}${detected ? ' ✓ rilevato' : ' default'}]`;
+    enbLink.style.cssText = 'color:#0066CC;font-weight:bold;text-decoration:underline;';
     td.appendChild(enbLink);
     
     // Separatore + cell id
@@ -2371,21 +2367,21 @@
     
     const cellSpan = document.createElement('span');
     cellSpan.textContent = cellHex;
-    cellSpan.title = `Cell/Sector ID: 0x${cellHex} = ${cellDec} dec`;
+    cellSpan.title = `Cell/Sector ID: ${cellHex} hex = ${cellDec} dec`;
     cellSpan.style.cssText = 'font-weight:bold;color:#444;';
     td.appendChild(cellSpan);
     
     // Badges operatori (per cambiare al volo)
     td.appendChild(document.createTextNode(' '));
     const badgeBox = document.createElement('span');
-    badgeBox.style.cssText = 'display:inline-block;margin-left:6px;vertical-align:middle;';
+    badgeBox.style.cssText = 'display:inline-block;margin-left:6px;';
     OPERATORS.forEach(op => {
       const b = document.createElement('a');
-      b.href = buildUrl(op.op, enbDec);
+      b.href = BASE + op.plmn + '.' + enbDec;
       b.target = '_blank';
       b.rel = 'noopener';
       b.textContent = op.name;
-      b.title = `Apri eNB ${enbDec} su lteitaly.it (${op.name})`;
+      b.title = `Cerca eNB ${enbDec} su lteitaly.it come ${op.name}`;
       b.style.cssText = `display:inline-block;margin-right:3px;padding:1px 5px;
         border-radius:3px;background:${op.color};color:#fff;
         font-size:10px;font-weight:bold;text-decoration:none;
@@ -2396,7 +2392,7 @@
     
     // Riga info dec
     const info = document.createElement('div');
-    info.style.cssText = 'font-size:10px;color:#888;margin-top:2px;font-family:monospace;line-height:1.2;';
+    info.style.cssText = 'font-size:10px;color:#888;margin-top:2px;font-family:monospace;';
     info.textContent = `eNB=${enbDec} · Cell=${cellDec}` + (detected ? ` · Op:${detected.name}` : '');
     td.appendChild(info);
   }
@@ -2418,8 +2414,9 @@
   window._lteItalyObserver = new MutationObserver(muts => {
     let shouldScan = false;
     for (const m of muts) {
-      if (m.type === 'childList' && m.addedNodes.length) { shouldScan = true; break; }
-      if (m.type === 'characterData') { shouldScan = true; break; }
+      if (m.type === 'childList' && m.addedNodes.length) shouldScan = true;
+      if (m.type === 'characterData') shouldScan = true;
+      if (shouldScan) break;
     }
     if (shouldScan) scan();
   });
@@ -2427,5 +2424,5 @@
     childList: true, subtree: true, characterData: true
   });
   
-  console.log('✓ LteItaly linker installato (formato URL: ?enodeb=DEC&op=NAME). Scansione attiva.');
+  console.log('✓ LteItaly linker installato. Scansione attiva.');
 })();
