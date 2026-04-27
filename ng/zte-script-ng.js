@@ -249,109 +249,139 @@
     return parts.join("");
   }
 
-function normalizeLteItalyPlmn(plmn, enbid) {
-  plmn = String(plmn || "").trim();
-
-  // Compatibilità con formato usato da LTEItaly / script miononno
-  if (plmn === "22201") plmn = "2221";   // TIM
-  if (plmn === "22299") plmn = "22288";  // WindTre/Iliad mapping
-
-  // Caso Fastweb/Iliad su rete WindTre, come nello script originale
-  if (plmn === "22250" && String(enbid).length === 6) {
-    plmn = "22288";
-  }
-
-  return plmn;
-}
-
-function extractPlmnFromNetInfo(netInfo, enbid) {
-  if (!netInfo) return "";
-
-  // Possibili nomi campo usati da firmware ZTE diversi
-  const candidates = [
-    netInfo.plmn,
-    netInfo.PLMN,
-    netInfo.mccmnc,
-    netInfo.mcc_mnc,
-    netInfo.mcc_mnc_operator,
-    netInfo.network_plmn,
-    netInfo.network_provider,
-    netInfo.network_provider_id,
-    netInfo.operator_numeric,
-    netInfo.operator_code,
-    netInfo.lte_plmn,
-    netInfo.lte_plmn_id,
-    netInfo.INTF_Network_In_Use
-  ];
-
-  // Caso vecchi script: qualcosa_tipo_tipo_22201_...
-  if (netInfo.INTF_Network_In_Use) {
-    const fromOldStyle = String(netInfo.INTF_Network_In_Use).split("_")[3] || "";
-    candidates.unshift(fromOldStyle);
-  }
-
-  // Caso campi separati MCC + MNC
-  if (netInfo.mcc && netInfo.mnc) {
-    candidates.unshift(String(netInfo.mcc) + String(netInfo.mnc).padStart(2, "0"));
-  }
-
-  for (const value of candidates) {
-    if (value === null || value === undefined) continue;
-
-    const str = String(value);
-
-    // PLMN italiani: 222xx oppure 222xxx
-    const match = str.match(/\b222\d{2,3}\b/);
-    if (match) {
-      return normalizeLteItalyPlmn(match[0], enbid);
+  function normalizeLteItalyPlmn(plmn, enbid) {
+    plmn = String(plmn || "").trim().toLowerCase();
+  
+    const byName = {
+      tim: "2221",
+      telecom: "2221",
+      "telecom italia": "2221",
+  
+      vodafone: "22210",
+      "vodafone it": "22210",
+      "vodafone italy": "22210",
+  
+      windtre: "22288",
+      "wind tre": "22288",
+      wind: "22288",
+      tre: "22288",
+      "3ita": "22288",
+  
+      iliad: "22250",
+  
+      fastweb: "22208"
+    };
+  
+    if (byName[plmn]) {
+      plmn = byName[plmn];
     }
-
-    // Caso TIM in formato LTEItaly già senza zero: 2221
-    if (str === "2221") {
-      return "2221";
+  
+    // Compatibilità con formato usato dagli script miononno
+    if (plmn === "22201") plmn = "2221";
+  
+    // Mapping storico usato nello script che hai incollato
+    if (plmn === "22299") plmn = "22288";
+  
+    // Caso Fastweb/Iliad su rete WindTre, come nello script originale
+    if (plmn === "22250" && String(enbid).length === 6) {
+      plmn = "22288";
     }
+  
+    return plmn;
   }
-
-  // Fallback: scandisce tutto netInfo, utile se il firmware usa un nome campo strano
-  const json = JSON.stringify(netInfo);
-  const fallback = json.match(/\b222\d{2,3}\b/);
-  if (fallback) {
-    return normalizeLteItalyPlmn(fallback[0], enbid);
+  
+  function extractPlmnFromNetInfo(netInfo, enbid) {
+    if (!netInfo) return "";
+  
+    const candidates = [
+      netInfo.plmn,
+      netInfo.PLMN,
+      netInfo.mccmnc,
+      netInfo.mcc_mnc,
+      netInfo.mcc_mnc_operator,
+      netInfo.network_plmn,
+      netInfo.network_provider,
+      netInfo.network_provider_id,
+      netInfo.network_provider_fullname,
+      netInfo.operator_numeric,
+      netInfo.operator_code,
+      netInfo.lte_plmn,
+      netInfo.lte_plmn_id,
+      netInfo.INTF_Network_In_Use
+    ];
+  
+    if (netInfo.INTF_Network_In_Use) {
+      const fromOldStyle = String(netInfo.INTF_Network_In_Use).split("_")[3] || "";
+      candidates.unshift(fromOldStyle);
+    }
+  
+    if (netInfo.mcc && netInfo.mnc) {
+      candidates.unshift(String(netInfo.mcc) + String(netInfo.mnc).padStart(2, "0"));
+    }
+  
+    for (const value of candidates) {
+      if (value === null || value === undefined) continue;
+  
+      const str = String(value).trim();
+  
+      // Caso PLMN numerico italiano, es. 22210, 22201, 22250, 22288
+      const match = str.match(/\b222\d{2,3}\b/);
+      if (match) {
+        return normalizeLteItalyPlmn(match[0], enbid);
+      }
+  
+      // Caso TIM in formato LTEItaly già senza zero
+      if (str === "2221") {
+        return "2221";
+      }
+  
+      // Caso nome operatore, es. Vodafone, WINDTRE, Iliad
+      const normalizedByName = normalizeLteItalyPlmn(str, enbid);
+      if (/^222\d+$/.test(normalizedByName)) {
+        return normalizedByName;
+      }
+    }
+  
+    // Fallback: cerca dentro tutto l’oggetto netInfo
+    const json = JSON.stringify(netInfo);
+    const fallback = json.match(/\b222\d{2,3}\b/);
+    if (fallback) {
+      return normalizeLteItalyPlmn(fallback[0], enbid);
+    }
+  
+    return "";
   }
-
-  return "";
-}
-
-function buildLteItalyBtsInfo(netInfo) {
-  const cellId = Number(netInfo?.cell_id || 0);
-
-  if (!cellId || isNaN(cellId)) {
+  
+  function buildLteItalyBtsInfo(netInfo) {
+    const cellId = Number(netInfo?.cell_id || 0);
+  
+    if (!cellId || isNaN(cellId)) {
+      return {
+        cellId: null,
+        enbid: null,
+        sector: null,
+        plmn: "",
+        url: "#"
+      };
+    }
+  
+    const enbid = Math.trunc(cellId / 256);
+    const sector = cellId % 256;
+    const plmn = extractPlmnFromNetInfo(netInfo, enbid);
+  
+    const url =
+      plmn && enbid
+        ? "https://lteitaly.it/internal/map.php#bts=" + plmn + "." + enbid
+        : "#";
+  
     return {
-      cellId: null,
-      enbid: null,
-      sector: null,
-      plmn: "",
-      url: "#"
+      cellId,
+      enbid,
+      sector,
+      plmn,
+      url
     };
   }
-
-  const enbid = Math.trunc(cellId / 256);
-  const sector = cellId % 256;
-  const plmn = extractPlmnFromNetInfo(netInfo, enbid);
-
-  const url =
-    plmn && enbid
-      ? "https://lteitaly.it/internal/map.php#bts=" + plmn + "." + enbid
-      : "#";
-
-  return {
-    cellId,
-    enbid,
-    sector,
-    plmn,
-    url
-  };
-}
 
   function setCurrent4gMask(maskNum) {
     const panel = document.getElementById("router-info-panel");
@@ -1365,12 +1395,12 @@ function buildLteItalyBtsInfo(netInfo) {
       }
 
       const lteItaly = buildLteItalyBtsInfo(netInfo);
-      
+
       const lteItalyDisplay =
         lteItaly.url !== "#"
           ? `<a id="lteitaly" href="${lteItaly.url}" target="_blank" rel="noopener noreferrer">${lteItaly.plmn}.${lteItaly.enbid}</a>`
           : "-";
-      
+
       const enbidDisplay =
         lteItaly.enbid
           ? `${lteItaly.enbid}${lteItaly.sector !== null ? ` / settore ${lteItaly.sector}` : ""}`
