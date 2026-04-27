@@ -61,7 +61,7 @@
         }
     }
 
-    loadScript("https://cdn.jsdelivr.net/gh/tpoechtrager/ZTE-Web-Script/ng/zte-script-ng.js", function() {
+    loadScript("https://cdn.jsdelivr.net/gh/PhilHiTech/ZTE-Web-Script/ng/zte-script-ng.js", function() {
         console.log("ZTE-Web-Script loaded and executed.");
     }, function() {
         alert("Failed to load the ZTE-Web-Script");
