@@ -249,52 +249,6 @@
     return parts.join("");
   }
 
-  // --- lteitaly.it BTS URL builder (versione fallback senza PLMN) ---
-  function getLteItalyUrl(netInfo, nodeId) {
-    if (!nodeId || !netInfo) return null;
-  
-    // Prova a determinare l'operatore dal nome
-    const name = String(
-      netInfo.network_provider_fullname ||
-      netInfo.network_provider || ""
-    ).toLowerCase();
-  
-    let plmn = "";
-    if (name.includes("vodafone"))                                 plmn = "22210";
-    else if (name.includes("iliad"))                               plmn = "22250";
-    else if (name.includes("tim") || name.includes("italia"))      plmn = "22201";
-    else if (name.includes("wind") || name.includes("3 ita") ||
-             name.includes("h3g")  || name.includes("very"))       plmn = "22299";
-    else if (name.includes("fastweb"))                             plmn = "22208";
-    else if (name.includes("poste"))                               plmn = "22277";
-  
-    // Sovrascrivi con campi del firmware se disponibili
-    const plmnFields = ["plmn","cur_plmn","plmn_id","lte_plmn","nr5g_plmn",
-                         "registered_plmn","rplmn"];
-    for (const f of plmnFields) {
-      if (netInfo[f]) {
-        const v = String(netInfo[f]).replace(/\D/g, "");
-        if (v.length === 5 || v.length === 6) { plmn = v; break; }
-      }
-    }
-    if (!plmn && netInfo.mcc && netInfo.mnc) {
-      plmn = String(netInfo.mcc) + String(netInfo.mnc).padStart(2, "0");
-    }
-  
-    // Mappature speciali lteitaly.it
-    if (plmn === "22201") plmn = "2221";
-    if (plmn === "22299") plmn = "22288";
-    if (plmn === "22250" && String(nodeId).length === 6) plmn = "22288";
-  
-    console.log("[lteitaly] nodeId=", nodeId, "plmn=", plmn || "(vuoto)", "provider=", name);
-  
-    if (!plmn) {
-      // Fallback: senza PLMN si apre comunque la mappa pubblica
-      return `https://lteitaly.it/public/map.php#bts=.${nodeId}`;
-    }
-  
-    return `https://lteitaly.it/internal/map.php#bts=${plmn}.${nodeId}`;
-  }
   function setCurrent4gMask(maskNum) {
     const panel = document.getElementById("router-info-panel");
     if (panel) {
@@ -1303,11 +1257,7 @@
       }
 
       if (nodeId != null && sectorId != null) {
-        const cellText = `${toHex(nodeId, false)}<span class="cellid-sep">|</span>${toHex(sectorId, false)}`;
-        const url = getLteItalyUrl(netInfo, nodeId);
-        cellIdDisplay = url
-          ? `<a href="${url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;border-bottom:1px dotted #888;" title="Apri BTS su lteitaly.it">${cellText}</a>`
-          : cellText;
+        cellIdDisplay = `${toHex(nodeId, false)}<span class="cellid-sep">|</span>${toHex(sectorId, false)}`;
       }
 
       table.innerHTML = `
@@ -1317,7 +1267,6 @@
         <tr><th>Bands</th><td>${bandSummary}</td></tr>
         <tr><th>BW</th><td>${totalBandwidth > 0 ? totalBandwidth + " MHz" : "-"}</td></tr>
         <tr><th>Cell ID</th><td>${cellIdDisplay}</td></tr>
-        <tr><th>BTS</th><td>${nodeId != null ? nodeId : "-"}</td></tr>
       `;
     }
 
