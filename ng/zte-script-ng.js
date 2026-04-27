@@ -373,7 +373,10 @@
       plmn && enbid
         ? "https://lteitaly.it/internal/map.php#bts=" + plmn + "." + enbid
         : "#";
-  
+
+    console.log("[LTEItaly] netInfo:", netInfo);
+    console.log("[LTEItaly] cellId:", cellId, "enbid:", enbid, "plmn:", plmn);
+
     return {
       cellId,
       enbid,
